@@ -15,18 +15,6 @@ module.exports = async (context, req) => {
     let resultData = {};
 
     try {
-        conn.connect(
-            function (err) {
-                if (err) {
-                    console.log("!!! Cannot connect !!! Error:");
-                    throw err;
-                }
-                else {
-                    console.log("Connection established.");
-                    readData();
-                }
-            });
-
         let result = await conn.query(`
             SELECT COUNT(DISTINCT id) AS "Total Patients",
                 COUNT(CASE WHEN sex = 'Male' THEN 1 END) AS "Male",
@@ -76,11 +64,5 @@ module.exports = async (context, req) => {
             status: 500
         };
         console.log(err);
-    } finally {
-        conn.end(
-            function (err) {
-                if (err) throw err;
-                else console.log('Closing connection.')
-            });
     }
 }

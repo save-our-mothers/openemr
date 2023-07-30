@@ -6,7 +6,7 @@ module.exports = async (context, req) => {
 
     const sshConfig = {
         host: process.env.SSH_HOST,
-        port: process.env.SSH_PORT, // default SSH port
+        port: parseInt(process.env.SSH_PORT), // default SSH port
         username: process.env.SSH_USER,
         privateKey: require('fs').readFileSync(process.env.SSH_KEY)
     };
@@ -47,6 +47,57 @@ module.exports = async (context, req) => {
         });
 
         let queryResults = {};
+
+        // factory function to make objects to populate with totals for each year
+        function yearFactory(year) {
+            //Make base object with year from argument
+            const yearObj = {
+                year: year,
+                year_total: 0,
+            };
+            //Add 52 weeks with a while loop
+            let weekNum = 1;
+            while (weekNum < 53) {
+                yearObj[weekNum] = 0;
+                weekNum++;
+            };
+            //Add 12 months (53-64) with a while loop
+            let monthNum = 53;
+            while (monthNum < 65) {
+                yearObj[monthNum] = 0;
+                monthNum++;
+            };
+            //Add 4 quarters (65-68) with a while loop
+            let quarterNum = 65;
+            while (quarterNum < 69) {
+                yearObj[quarterNum] = 0;
+                quarterNum++;
+            }
+            return yearObj;
+        };
+
+        //create object for each year by passing that year into yearFactory
+        let y2021 = yearFactory(2021);
+        let y2022 = yearFactory(2022);
+        let y2023 = yearFactory(2023);
+        let y2024 = yearFactory(2024);
+        let y2025 = yearFactory(2025);
+        let y2026 = yearFactory(2026);
+        let y2027 = yearFactory(2027);
+        let y2028 = yearFactory(2028);
+
+        const yearsData = [
+            { 2021: y2021 },
+            { 2022: y2022 },
+            { 2023: y2023 },
+            { 2024: y2024 },
+            { 2025: y2025 },
+            { 2026: y2026 },
+            { 2027: y2027 },
+            { 2028: y2028 }
+        ];
+
+
 
         let queryText = `SELECT 
             COUNT(DISTINCT id) AS "Total Patients",
@@ -132,6 +183,97 @@ module.exports = async (context, req) => {
         });
 
         queryResults.familySize = queryResult[0];
+
+        queryText = `SELECT dashboard_date_d.year, DATE(form_encounter.date) AS "encounter date", dashboard_date_d.week_of_year, dashboard_date_d.month_of_year, dashboard_date_d.quarter
+        FROM form_encounter
+        JOIN dashboard_date_d ON DATE(form_encounter.date) = dashboard_date_d.date
+        ORDER BY dashboard_date_d.year ASC;
+        `;
+
+        queryResult = await new Promise((resolve, reject) => {
+
+            connection.query(queryText, (error, results, fields) => {
+                if (error) reject(error);
+                else resolve(results);
+            });
+        });
+
+        let encounters = queryResult;
+
+        encounters.forEach(encounter => {
+            encounter.week_of_year = parseInt(encounter.week_of_year);
+            encounter.month_of_year = parseInt(encounter.month_of_year);
+        });
+
+        for (let visit of encounters) {
+            //pulls week, month, and quarter data
+            let week = visit.week_of_year;
+            let month = visit.month_of_year;
+            let quarter = visit.quarter;
+            //loops over array of y20xx objects
+            for (let i = 0; i < yearsData.length; i++) {
+                //if the year matches b/w visit and object of records for that year, increments each record.
+                //year from visit is matched to relevant object by comparing the year of the visit
+                //to the key and incrementing the corresponding properrty of the object in array yearsObject 
+                if (visit.year == Object.keys(yearsData[i])[0]) {
+                    //increments week total for that week (1 to 52)
+                    yearsData[i][visit.year][week] += 1;
+
+                    //increments month total for that month (53 to 64)
+                    yearsData[i][visit.year][month + 52] += 1;
+                    //incremenets quarter total for that quarter(65 to 68)
+                    yearsData[i][visit.year][quarter + 64] += 1;
+                    //increments year_total for that year
+                    yearsData[i][visit.year].year_total += 1;
+                }
+            }
+        }
+
+        queryText = `SELECT dashboard_date_d.year, apptdate, dashboard_date_d.week_of_year, dashboard_date_d.month_of_year, dashboard_date_d.quarter
+        FROM patient_tracker
+        JOIN dashboard_date_d ON apptdate = dashboard_date_d.date
+        ORDER BY dashboard_date_d.year ASC;
+        `;
+
+        queryResult = await new Promise((resolve, reject) => {
+
+            connection.query(queryText, (error, results, fields) => {
+                if (error) reject(error);
+                else resolve(results);
+            });
+        });
+        
+        let appointments = queryResult;
+
+        appointments.forEach(encounter => {
+            encounter.week_of_year = parseInt(encounter.week_of_year);
+            encounter.month_of_year = parseInt(encounter.month_of_year);
+        });
+
+        for (let visit of appointments) {
+            //pulls week, month, and quarter data
+            let week = visit.week_of_year;
+            let month = visit.month_of_year;
+            let quarter = visit.quarter;
+            //loops over array of y20xx objects
+            for (let i = 0; i < yearsData.length; i++) {
+                //if the year matches b/w visit and object of records for that year, increments each record.
+                //year from visit is matched to relevant object by comparing the year of the visit
+                //to the key and incrementing the corresponding properrty of the object in array yearsObject 
+                if (visit.year == Object.keys(yearsData[i])[0]) {
+                    //increments week total for that week (1 to 52)
+                    yearsData[i][visit.year][week] += 1;
+                    //increments month total for that month (53 to 64)
+                    yearsData[i][visit.year][month + 52] += 1;
+                    //incremenets quarter total for that quarter(65 to 68)
+                    yearsData[i][visit.year][quarter + 64] += 1;
+                    //increments year_total for that year
+                    yearsData[i][visit.year].year_total += 1;
+                }
+            }
+        }
+
+        queryResults.patient_visits = yearsData;
 
         const responseJSON = {
             "data": queryResults
